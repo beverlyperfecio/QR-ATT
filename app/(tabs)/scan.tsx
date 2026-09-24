@@ -4,10 +4,11 @@ import { StyleSheet, Text, View } from 'react-native';
 
 import AppButton from '@/components/AppButton';
 import { COLORS } from '@/constants/colors';
-import { STUDENT_ID } from '@/constants/student';
-import { registerAttendance } from '@/lib/database';
+import { useAuth } from '@/lib/auth';
+import { registerAttendance } from '@/lib/attendance';
 
 export default function ScanScreen() {
+  const { user } = useAuth();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [lastData, setLastData] = useState<string | null>(null);
@@ -38,7 +39,8 @@ export default function ScanScreen() {
   const handleBarcodeScanned = ({ data }: { data: string }) => {
     setScanned(true);
     setLastData(data);
-    registerAttendance(data, STUDENT_ID).then((result) => {
+    const studentId = user?.id ?? 'unknown';
+    registerAttendance(data, studentId).then((result) => {
       setMessage(result.message);
       setSuccess(result.success);
     });
@@ -92,7 +94,7 @@ export default function ScanScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background,
+    backgroundColor: '#37352F',
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 24,
@@ -101,8 +103,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   title: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 22,
+    fontWeight: '800',
     color: COLORS.textPrimary,
     marginBottom: 8,
   },
@@ -117,15 +119,22 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 20,
     right: 20,
-    bottom: 60,
+    bottom: 42,
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 11,
+    borderWidth: 2,
+    borderColor: COLORS.border,
+    padding: 18,
     alignItems: 'center',
+    shadowColor: COLORS.shadow,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 0,
+    elevation: 5,
   },
   overlayText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontWeight: '800',
     color: COLORS.textPrimary,
     marginBottom: 6,
     textAlign: 'center',
@@ -134,13 +143,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     textAlign: 'center',
     marginBottom: 8,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   success: {
-    color: '#2E7D32',
+    color: COLORS.success,
   },
   error: {
-    color: '#C62828',
+    color: COLORS.danger,
   },
   scanData: {
     fontSize: 12,
@@ -149,4 +158,3 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
 });
-

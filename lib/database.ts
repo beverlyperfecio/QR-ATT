@@ -1,17 +1,10 @@
-import * as SQLite from 'expo-sqlite';
+import { supabase } from './supabase';
 
 export type AttendanceRecord = {
   id: number;
   eventId: string;
   eventTitle: string;
   scannedAt: string;
-};
-
-export type Event = {
-  eventId: string;
-  title: string;
-  start: string;
-  end: string;
 };
 
 type EventPayload = {
@@ -28,36 +21,12 @@ export type RegisterResult = {
   eventTitle?: string;
 };
 
-let db: SQLite.SQLiteDatabase | null = null;
-
-async function getDb() {
-  if (!db) {
-    db = await SQLite.openDatabaseAsync('qr-attendance.db');
-    await db.execAsync(`
-      PRAGMA journal_mode = WAL;
-      CREATE TABLE IF NOT EXISTS events (
-        eventId TEXT PRIMARY KEY NOT NULL,
-        title TEXT NOT NULL,
-        start TEXT NOT NULL,
-        end TEXT NOT NULL
-      );
-      CREATE TABLE IF NOT EXISTS attendance (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        studentId TEXT NOT NULL,
-        eventId TEXT NOT NULL,
-        scannedAt TEXT NOT NULL,
-        UNIQUE (studentId, eventId)
-      );
-    `);
-  }
-  return db;
-}
-
 export async function registerAttendance(
   rawPayload: string,
   studentId: string
 ): Promise<RegisterResult> {
   let payload: EventPayload;
+
   try {
     payload = JSON.parse(rawPayload);
   } catch {
@@ -73,63 +42,138 @@ export async function registerAttendance(
   const end = payload.end ? new Date(payload.end).getTime() : null;
 
   if (start && now < start) {
-    return { success: false, message: 'Event has not started yet.' };
-  }
-  if (end && now > end) {
-    return { success: false, message: 'Event has already ended.' };
-  }
-
-  const database = await getDb();
-  const title = payload.title ?? payload.event;
-
-  await database.runAsync(
-    'INSERT OR IGNORE INTO events (eventId, title, start, end) VALUES (?, ?, ?, ?)',
-    payload.event,
-    title,
-    payload.start ?? '',
-    payload.end ?? ''
-  );
-
-  const result = await database.runAsync(
-    'INSERT OR IGNORE INTO attendance (studentId, eventId, scannedAt) VALUES (?, ?, ?)',
-    studentId,
-    payload.event,
-    new Date().toISOString()
-  );
-
-  if (result.changes === 0) {
     return {
       success: false,
-      message: 'Already registered for this event.',
+      message: 'Event has not started yet.',
+    };
+  }
+
+  if (end && now > end) {
+    return {
+      success: false,
+      message: 'Event has already ended.',
+    };
+  }
+
+  const title = payload.title ?? payload.event;
+
+  const { data: existingEvent, error: eventError } = await supabase
+    .from('events')
+    .select('event_code, title, start_time, end_time')
+    .eq('event_code', payload.event)
+    .maybeSingle();
+
+  if (eventError) {
+    console.error('EVENT CHECK ERROR:', eventError);
+
+    return {
+      success: false,
+      message: 'Failed to check event.',
+    };
+  }
+
+  if (!existingEvent) {
+    const { error: createEventError } = await supabase
+      .from('events')
+      .insert({
+        event_code: payload.event,
+        title,
+        start_time: payload.start ?? null,
+        end_time: payload.end ?? null,
+      });
+
+    if (createEventError) {
+      console.error('CREATE EVENT ERROR:', createEventError);
+
+      return {
+        success: false,
+        message: 'Failed to save event.',
+      };
+    }
+  }
+
+  const { error: attendanceError } = await supabase
+    .from('attendance')
+    .insert({
+      student_id: studentId,
+      event_code: payload.event,
+      scanned_at: new Date().toISOString(),
+    });
+
+  if (attendanceError) {
+    console.error('ATTENDANCE INSERT ERROR:', attendanceError);
+
+    if (attendanceError.code === '23505') {
+      return {
+        success: false,
+        message: 'Already registered for this event.',
+        eventTitle: title,
+      };
+    }
+
+    return {
+      success: false,
+      message: 'Failed to record attendance.',
       eventTitle: title,
     };
   }
 
-  return { success: true, message: 'Attendance recorded!', eventTitle: title };
+  return {
+    success: true,
+    message: 'Attendance recorded!',
+    eventTitle: title,
+  };
 }
 
 export async function getAttendanceHistory(
   studentId: string
 ): Promise<AttendanceRecord[]> {
-  const database = await getDb();
-  const rows = await database.getAllAsync<AttendanceRecord>(
-    `SELECT a.id, a.eventId, e.title AS eventTitle, a.scannedAt
-     FROM attendance a
-     JOIN events e ON e.eventId = a.eventId
-     WHERE a.studentId = ?
-     ORDER BY a.scannedAt DESC`,
-    studentId
-  );
-  return rows;
-}
+  const { data: attendanceRows, error: attendanceError } = await supabase
+    .from('attendance')
+    .select('id, event_code, scanned_at')
+    .eq('student_id', studentId)
+    .order('scanned_at', { ascending: false });
 
-export async function createEvent(event: Event): Promise<void> {
-  const database = await getDb();
-  await database.runAsync(
-    'INSERT OR REPLACE INTO events (eventId, title, start, end) VALUES (?, ?, ?, ?)',
-    event.eventId,
-    event.title,
-    event.start,
-    event.end
-  );
+  if (attendanceError) {
+    console.error('GET ATTENDANCE HISTORY ERROR:', attendanceError);
+    return [];
+  }
+
+  if (!attendanceRows || attendanceRows.length === 0) {
+    return [];
+  }
+
+  const eventCodes = [
+    ...new Set(attendanceRows.map((row) => row.event_code)),
+  ];
+
+  const { data: events, error: eventsError } = await supabase
+    .from('events')
+    .select('event_code, title')
+    .in('event_code', eventCodes);
+
+  if (eventsError) {
+    console.error('GET EVENTS FOR HISTORY ERROR:', eventsError);
+
+    return attendanceRows.map((row) => ({
+      id: row.id,
+      eventId: row.event_code,
+      eventTitle: row.event_code,
+      scannedAt: row.scanned_at,
+    }));
+  }
+
+  const eventTitleMap = new Map<string, string>();
+
+  for (const event of events ?? []) {
+    eventTitleMap.set(event.event_code, event.title);
+  }
+
+  return attendanceRows.map((row) => ({
+    id: row.id,
+    eventId: row.event_code,
+    eventTitle:
+      eventTitleMap.get(row.event_code) ?? row.event_code,
+    scannedAt: row.scanned_at,
+  }));
 }

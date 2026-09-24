@@ -2,7 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   Platform,
   Pressable,
@@ -13,10 +13,14 @@ import {
   View,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
+import { useFocusEffect } from 'expo-router';
 
 import AppButton from '@/components/AppButton';
 import { COLORS } from '@/constants/colors';
-import { createEvent } from '@/lib/database';
+import { createEvent } from '@/lib/events';
+import { buildQRPayload } from '@/lib/qr';
+import { useAuth } from '@/lib/auth';
+import { getProfile, type Role } from '@/lib/profiles';
 
 function toLocalISO(date: Date) {
   const pad = (n: number) => String(n).padStart(2, '0');
@@ -43,6 +47,10 @@ const QUICK_END_OPTIONS = [
 type EditTarget = 'start' | 'end';
 
 export default function TeacherScreen() {
+  const { user } = useAuth();
+  const [role, setRole] = useState<Role | null>(null);
+  const [roleLoading, setRoleLoading] = useState(true);
+
   const [title, setTitle] = useState('');
   const [eventId, setEventId] = useState('');
   const [startDate, setStartDate] = useState(() => new Date());
@@ -55,6 +63,26 @@ export default function TeacherScreen() {
   const [message, setMessage] = useState<string | null>(null);
 
   const isAndroid = Platform.OS === 'android';
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+      if (!user) {
+        setRoleLoading(false);
+        return () => {
+          active = false;
+        };
+      }
+      getProfile(user.id).then((profile) => {
+        if (!active) return;
+        setRole(profile?.role ?? 'student');
+        setRoleLoading(false);
+      });
+      return () => {
+        active = false;
+      };
+    }, [user])
+  );
 
   const openPicker = (target: EditTarget) => {
     setMessage(null);
@@ -112,19 +140,33 @@ export default function TeacherScreen() {
       return;
     }
 
-    createEvent(event).then(() => {
+    createEvent(event).then(({ error }) => {
+      if (error) {
+        setMessage('Could not save the event. Please try again.');
+        return;
+      }
       setMessage('Event saved! Scan the QR with the Scan tab to test it.');
-      setPayload(
-        JSON.stringify({
-          v: 1,
-          event: event.eventId,
-          title: event.title,
-          start: event.start,
-          end: event.end,
-        })
-      );
+      setPayload(buildQRPayload(event));
     });
   };
+
+  if (roleLoading) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.message}>Checking your account...</Text>
+      </View>
+    );
+  }
+
+  if (role !== 'teacher') {
+    return (
+      <View style={styles.center}>
+        <Ionicons name="lock-closed-outline" size={48} color={COLORS.textSecondary} />
+        <Text style={styles.lockTitle}>Teachers Only</Text>
+        <Text style={styles.lockSubtitle}>Only teacher accounts can create events.</Text>
+      </View>
+    );
+  }
 
   return (
     <ScrollView
@@ -173,10 +215,14 @@ export default function TeacherScreen() {
         {QUICK_END_OPTIONS.map((option) => (
           <Pressable
             key={option.label}
-            style={styles.chip}
+            style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
             onPress={() => handleQuickEnd(option.ms)}
           >
-            <Text style={styles.chipText}>{option.label}</Text>
+            {({ pressed }) => (
+              <Text style={[styles.chipText, pressed && styles.chipTextPressed]}>
+                {option.label}
+              </Text>
+            )}
           </Pressable>
         ))}
       </View>
@@ -242,13 +288,32 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.background,
   },
   content: {
-    paddingHorizontal: 24,
-    paddingTop: 24,
+    paddingHorizontal: 20,
+    paddingTop: 22,
     paddingBottom: 40,
   },
+  center: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  lockTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: COLORS.textPrimary,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  lockSubtitle: {
+    fontSize: 14,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+  },
   title: {
-    fontSize: 20,
-    fontWeight: '600',
+    fontSize: 26,
+    fontWeight: '800',
     color: COLORS.textPrimary,
     marginBottom: 4,
   },
@@ -259,26 +324,27 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 12,
+    fontWeight: '800',
     color: COLORS.textPrimary,
     marginBottom: 6,
-    marginTop: 10,
+    marginTop: 14,
+    letterSpacing: 0.5,
   },
   input: {
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 8,
+    borderWidth: 2,
     borderColor: COLORS.border,
     paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 15,
+    paddingVertical: 14,
+    fontSize: 16,
     color: COLORS.textPrimary,
   },
   pickerField: {
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    borderWidth: 1,
+    borderRadius: 8,
+    borderWidth: 2,
     borderColor: COLORS.border,
     paddingHorizontal: 14,
     paddingVertical: 14,
@@ -301,15 +367,25 @@ const styles = StyleSheet.create({
   },
   chip: {
     backgroundColor: COLORS.surface,
-    borderRadius: 999,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
     paddingHorizontal: 14,
     paddingVertical: 7,
     marginRight: 8,
   },
+  chipPressed: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+    transform: [{ translateY: 1 }],
+  },
   chipText: {
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.primary,
+  },
+  chipTextPressed: {
+    color: COLORS.textOnPrimary,
   },
   hint: {
     fontSize: 12,
@@ -328,19 +404,21 @@ const styles = StyleSheet.create({
   },
   resultCard: {
     backgroundColor: COLORS.card,
-    borderRadius: 14,
-    padding: 16,
+    borderRadius: 11,
+    padding: 18,
     marginTop: 20,
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORS.border,
     shadowColor: COLORS.shadow,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOffset: { width: 4, height: 4 },
+    shadowOpacity: 0.16,
+    shadowRadius: 0,
+    elevation: 4,
   },
   resultTitle: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     color: COLORS.textPrimary,
     textAlign: 'center',
     marginBottom: 12,
@@ -348,7 +426,9 @@ const styles = StyleSheet.create({
   qrBox: {
     backgroundColor: '#FFFFFF',
     padding: 12,
-    borderRadius: 10,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: COLORS.border,
     marginBottom: 12,
   },
   payloadText: {
@@ -358,4 +438,3 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
 });
-
