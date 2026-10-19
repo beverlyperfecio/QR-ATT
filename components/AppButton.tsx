@@ -59,7 +59,7 @@ export default function AppButton({
         <Ionicons
           name={icon}
           size={22}
-          color={COLORS.textSecondary}
+          color="#ff0202"
           style={styles.icon}
         />
 

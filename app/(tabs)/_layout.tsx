@@ -1,27 +1,92 @@
-import { Tabs } from 'expo-router';
+import { Tabs, useFocusEffect } from 'expo-router';
+import { useCallback, useState } from 'react';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  View,
+} from 'react-native';
 
 import { COLORS } from '@/constants/colors';
+import { useAuth } from '@/lib/auth';
+import { getProfile } from '@/lib/profiles';
 
 export default function TabLayout() {
+  const { user } = useAuth();
+
+  const [role, setRole] = useState<string | null>(null);
+  const [loadingRole, setLoadingRole] = useState(true);
+
+  const loadRole = useCallback(async () => {
+    if (!user) {
+      setRole(null);
+      setLoadingRole(false);
+      return;
+    }
+
+    setLoadingRole(true);
+
+    try {
+      const profile = await getProfile(user.id);
+      setRole(
+        String(profile?.role ?? 'student')
+          .trim()
+          .toLowerCase()
+      );
+    } catch (error) {
+      console.error('Failed to load user role:', error);
+      setRole('student');
+    } finally {
+      setLoadingRole(false);
+    }
+  }, [user]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadRole();
+    }, [loadRole])
+  );
+
+  if (loadingRole) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator
+          size="large"
+          color={COLORS.primary}
+        />
+      </View>
+    );
+  }
+
   return (
     <Tabs
       screenOptions={{
         tabBarActiveTintColor: COLORS.primary,
         tabBarInactiveTintColor: COLORS.textSecondary,
-        headerStyle: { backgroundColor: COLORS.background },
+
+        headerStyle: {
+          backgroundColor: COLORS.background,
+        },
         headerShadowVisible: false,
         headerTintColor: COLORS.textPrimary,
-        tabBarLabelStyle: { fontSize: 11, fontWeight: '700', marginBottom: 4 },
+
+        tabBarLabelStyle: {
+          fontSize: 11,
+          fontWeight: '700',
+          marginBottom: 4,
+        },
+
         tabBarStyle: {
           height: 76,
           paddingTop: 9,
-          backgroundColor: 'rgba(255, 253, 245, 0.96)',
-          borderTopWidth: 1,
+          backgroundColor: 'hsla(213, 37%, 24%, 0.96)',
+          borderTopWidth: 0,
           borderTopColor: COLORS.border,
           shadowColor: COLORS.shadow,
-          shadowOffset: { width: 0, height: -3 },
+          shadowOffset: {
+            width: 0,
+            height: -3,
+          },
           shadowOpacity: 0.12,
           shadowRadius: 0,
           elevation: 8,
@@ -41,7 +106,6 @@ export default function TabLayout() {
           ),
         }}
       />
-      
 
       <Tabs.Screen
         name="history"
@@ -64,7 +128,11 @@ export default function TabLayout() {
           tabBarIcon: ({ color, focused }) => (
             <View style={styles.scanButton}>
               <Ionicons
-                name={focused ? 'qr-code' : 'qr-code-outline'}
+                name={
+                  focused
+                    ? 'qr-code'
+                    : 'qr-code-outline'
+                }
                 color={COLORS.textOnPrimary}
                 size={28}
               />
@@ -79,7 +147,11 @@ export default function TabLayout() {
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'person' : 'person-outline'}
+              name={
+                focused
+                  ? 'person'
+                  : 'person-outline'
+              }
               color={color}
               size={24}
             />
@@ -91,9 +163,14 @@ export default function TabLayout() {
         name="teacher"
         options={{
           title: 'Teacher',
+          href: '/teacher',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={focused ? 'clipboard' : 'clipboard-outline'}
+              name={
+                focused
+                  ? 'clipboard'
+                  : 'clipboard-outline'
+              }
               color={color}
               size={24}
             />
@@ -105,18 +182,28 @@ export default function TabLayout() {
 }
 
 const styles = StyleSheet.create({
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: COLORS.background,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
   scanButton: {
     width: 62,
     height: 62,
     borderRadius: 31,
     backgroundColor: COLORS.primary,
     borderWidth: 3,
-    borderColor: COLORS.card,
+    borderColor: COLORS.success,
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: -27,
     shadowColor: COLORS.shadow,
-    shadowOffset: { width: 3, height: 4 },
+    shadowOffset: {
+      width: 3,
+      height: 4,
+    },
     shadowOpacity: 0.2,
     shadowRadius: 0,
     elevation: 7,

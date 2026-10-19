@@ -1,3 +1,4 @@
+
 import { useState } from 'react';
 import {
   StyleSheet,
@@ -14,9 +15,9 @@ import {
 } from 'react-native';
 import { Link, useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import AppButton from '@/components/AppButton';
-import Header from '@/components/Header';
 import { COLORS } from '@/constants/colors';
 import { signUp } from '@/lib/auth';
 
@@ -36,7 +37,12 @@ export default function RegisterScreen() {
   const handleRegister = async () => {
     setError(null);
 
-    if (!email.trim() || !password || !confirmPassword) {
+    if (
+      !fullName.trim() ||
+      !email.trim() ||
+      !password ||
+      !confirmPassword
+    ) {
       setError('All fields are required.');
       return;
     }
@@ -70,7 +76,7 @@ export default function RegisterScreen() {
       } else {
         setSuccess(true);
       }
-    } catch (err) {
+    } catch {
       setError('An unexpected error occurred. Please try again.');
     } finally {
       setLoading(false);
@@ -91,7 +97,17 @@ export default function RegisterScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.headerContainer}>
-              <Header title="QR Attendance" />
+              <View style={styles.logoCircle}>
+                <Ionicons
+                  name="qr-code"
+                  size={52}
+                  color={COLORS.primary}
+                />
+              </View>
+
+              <Text style={styles.logoTitle}>QR ATTENDANCE</Text>
+
+              
             </View>
 
             <View style={styles.titleContainer}>
@@ -104,13 +120,20 @@ export default function RegisterScreen() {
 
             {success ? (
               <View style={styles.successContainer}>
+                <Ionicons
+                  name="mail-open-outline"
+                  size={42}
+                  color={COLORS.accent}
+                  style={styles.successIcon}
+                />
+
                 <Text style={styles.successTitle}>
                   Check your email!
                 </Text>
 
                 <Text style={styles.successText}>
-                  We sent a confirmation link to {email}. Click the link to
-                  verify your account, then come back and sign in.
+                  We sent a confirmation link to {email}. Click the
+                  link to verify your account, then come back and sign in.
                 </Text>
 
                 <Link href="/login" style={styles.link}>
@@ -128,6 +151,7 @@ export default function RegisterScreen() {
                   placeholder="Your full name"
                   placeholderTextColor={COLORS.textSecondary}
                   editable={!loading}
+                  autoCapitalize="words"
                 />
 
                 <Text style={styles.label}>I am a...</Text>
@@ -139,7 +163,18 @@ export default function RegisterScreen() {
                       role === 'student' && styles.roleChipActive,
                     ]}
                     onPress={() => setRole('student')}
+                    disabled={loading}
                   >
+                    <Ionicons
+                      name="person-outline"
+                      size={19}
+                      color={
+                        role === 'student'
+                          ? COLORS.primary
+                          : COLORS.textSecondary
+                      }
+                    />
+
                     <Text
                       style={[
                         styles.roleChipText,
@@ -156,7 +191,18 @@ export default function RegisterScreen() {
                       role === 'teacher' && styles.roleChipActive,
                     ]}
                     onPress={() => setRole('teacher')}
+                    disabled={loading}
                   >
+                    <Ionicons
+                      name="school-outline"
+                      size={19}
+                      color={
+                        role === 'teacher'
+                          ? COLORS.primary
+                          : COLORS.textSecondary
+                      }
+                    />
+
                     <Text
                       style={[
                         styles.roleChipText,
@@ -177,6 +223,7 @@ export default function RegisterScreen() {
                   placeholder="your.email@school.edu"
                   placeholderTextColor={COLORS.textSecondary}
                   autoCapitalize="none"
+                  autoCorrect={false}
                   keyboardType="email-address"
                   editable={!loading}
                 />
@@ -190,6 +237,7 @@ export default function RegisterScreen() {
                   placeholder="At least 6 characters"
                   placeholderTextColor={COLORS.textSecondary}
                   secureTextEntry
+                  autoCapitalize="none"
                   editable={!loading}
                 />
 
@@ -202,13 +250,21 @@ export default function RegisterScreen() {
                   placeholder="Re-enter your password"
                   placeholderTextColor={COLORS.textSecondary}
                   secureTextEntry
+                  autoCapitalize="none"
                   editable={!loading}
+                  onSubmitEditing={handleRegister}
+                  returnKeyType="done"
                 />
 
                 {error && (
-                  <Text style={styles.error}>
-                    {error}
-                  </Text>
+                  <View style={styles.errorContainer}>
+                    <Ionicons
+                      name="alert-circle-outline"
+                      size={18}
+                      color={COLORS.danger}
+                    />
+                    <Text style={styles.error}>{error}</Text>
+                  </View>
                 )}
 
                 {loading ? (
@@ -221,7 +277,7 @@ export default function RegisterScreen() {
                   <View style={styles.buttonContainer}>
                     <AppButton
                       theme="primary"
-                      title="Sign Up"
+                      title="Create Account"
                       icon="person-add-outline"
                       onPress={handleRegister}
                     />
@@ -235,6 +291,7 @@ export default function RegisterScreen() {
                 Already have an account? Sign In
               </Link>
             )}
+
           </ScrollView>
         </TouchableWithoutFeedback>
       </KeyboardAvoidingView>
@@ -254,16 +311,38 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     flexGrow: 1,
-    paddingHorizontal: 20,
-    paddingBottom: 40,
+    paddingHorizontal: 24,
+    paddingBottom: 30,
   },
 
   headerContainer: {
     alignItems: 'center',
-    marginTop: 12,
-    marginBottom: 12,
+    justifyContent: 'center',
+    marginTop: 18,
+    marginBottom: 25,
   },
 
+  logoCircle: {
+    width: 96,
+    height: 96,
+    borderRadius: 40,
+    backgroundColor: '#18373B',
+    borderWidth: 3,
+    borderColor: COLORS.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+
+  logoTitle: {
+    fontSize: 22,
+    fontWeight: '900',
+    letterSpacing: 2,
+    color: COLORS.primary,
+    textAlign: 'center',
+  },
+
+ 
   titleContainer: {
     alignItems: 'center',
     width: '100%',
@@ -273,15 +352,15 @@ const styles = StyleSheet.create({
     fontSize: 30,
     fontWeight: '800',
     color: COLORS.textPrimary,
-    marginBottom: 4,
+    marginBottom: 5,
     textAlign: 'center',
   },
 
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     color: COLORS.textSecondary,
     lineHeight: 21,
-    marginBottom: 26,
+    marginBottom: 20,
     textAlign: 'center',
   },
 
@@ -290,43 +369,46 @@ const styles = StyleSheet.create({
   },
 
   buttonContainer: {
-    marginTop: 16,
+    marginTop: 20,
   },
 
   label: {
     fontSize: 12,
     fontWeight: '800',
     color: COLORS.textPrimary,
-    marginBottom: 6,
+    marginBottom: 7,
     marginTop: 14,
     letterSpacing: 0.5,
   },
 
   input: {
     backgroundColor: COLORS.card,
-    borderRadius: 8,
-    borderWidth: 2,
+    borderRadius: 10,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
     paddingHorizontal: 14,
     paddingVertical: 14,
-    fontSize: 16,
+    fontSize: 15,
     color: COLORS.textPrimary,
   },
 
   roleRow: {
     flexDirection: 'row',
-    gap: 10,
+    gap: 12,
     marginBottom: 4,
   },
 
   roleChip: {
     flex: 1,
+    flexDirection: 'row',
+    gap: 8,
     backgroundColor: COLORS.card,
-    borderRadius: 8,
-    borderWidth: 2,
+    borderRadius: 10,
+    borderWidth: 1.5,
     borderColor: COLORS.border,
-    paddingVertical: 12,
+    paddingVertical: 13,
     alignItems: 'center',
+    justifyContent: 'center',
   },
 
   roleChipActive: {
@@ -342,49 +424,70 @@ const styles = StyleSheet.create({
 
   roleChipTextActive: {
     color: COLORS.primary,
-    fontWeight: '700',
+    fontWeight: '800',
+  },
+
+  errorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    marginTop: 12,
   },
 
   error: {
-    fontSize: 14,
+    flex: 1,
+    fontSize: 13,
     color: COLORS.danger,
-    marginTop: 12,
-    marginBottom: 4,
   },
 
   loader: {
-    marginVertical: 16,
+    marginVertical: 20,
   },
 
   link: {
     fontSize: 14,
     color: COLORS.primary,
     textAlign: 'center',
-    fontWeight: '600',
+    fontWeight: '700',
+    marginTop: 8,
   },
 
   successContainer: {
     alignItems: 'center',
     marginBottom: 24,
-    padding: 20,
+    padding: 22,
     backgroundColor: COLORS.card,
-    borderRadius: 10,
-    borderWidth: 2,
+    borderRadius: 16,
+    borderWidth: 1.5,
     borderColor: COLORS.accent,
   },
 
+  successIcon: {
+    marginBottom: 12,
+  },
+
   successTitle: {
-    fontSize: 18,
-    fontWeight: '700',
+    fontSize: 20,
+    fontWeight: '800',
     color: COLORS.textPrimary,
-    marginBottom: 8,
+    marginBottom: 10,
   },
 
   successText: {
     fontSize: 14,
     color: COLORS.textSecondary,
     textAlign: 'center',
-    lineHeight: 20,
+    lineHeight: 22,
     marginBottom: 16,
+  },
+
+  footerText: {
+    fontSize: 9,
+    fontWeight: '700',
+    letterSpacing: 1.5,
+    color: COLORS.textSecondary,
+    textAlign: 'center',
+    marginTop: 24,
+    opacity: 0.65,
   },
 });
