@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker, {
   type DateTimePickerEvent,
 } from '@react-native-community/datetimepicker';
+import { useFocusEffect } from 'expo-router';
 import { useCallback, useState } from 'react';
 import {
   Platform,
@@ -13,11 +14,14 @@ import {
   View,
 } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
-import { useFocusEffect } from 'expo-router';
 
 import AppButton from '@/components/AppButton';
 import { COLORS } from '@/constants/colors';
-import { createEvent } from '@/lib/events';
+import {
+  createEvent,
+  getEventsByTeacher,
+  type CloudEvent,
+} from '@/lib/events';
 import { buildQRPayload } from '@/lib/qr';
 import { useAuth } from '@/lib/auth';
 import { getProfile, type Role } from '@/lib/profiles';
@@ -32,15 +36,12 @@ const THEME = {
   text: '#F4F7FC',
   muted: '#9BAAC0',
   white: '#FFFFFF',
+  red: '#d41c1c',
 };
 
-function toLocalISO(date: Date) {
-  const pad = (n: number) => String(n).padStart(2, '0');
 
-  return (
-    `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}` +
-    `T${pad(date.getHours())}:${pad(date.getMinutes())}:00`
-  );
+function toLocalISO(date: Date) {
+  return date.toISOString();
 }
 
 function formatDateTime(date: Date) {
@@ -50,6 +51,16 @@ function formatDateTime(date: Date) {
   return `${month} ${pad(date.getDate())}, ${date.getFullYear()} · ${pad(
     date.getHours()
   )}:${pad(date.getMinutes())}`;
+}
+
+function formatSavedDateTime(value: string | null) {
+  if (!value) return 'Not set';
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) return value;
+
+  return formatDateTime(date);
 }
 
 const QUICK_END_OPTIONS = [
@@ -77,8 +88,11 @@ export default function TeacherScreen() {
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [editingPart, setEditingPart] = useState<'date' | 'time'>('date');
 
-  const [payload, setPayload] = useState<string | null>(null);
+  const [savedEvents, setSavedEvents] = useState<CloudEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+
   const [message, setMessage] = useState<string | null>(null);
+  const [messageIsSuccess, setMessageIsSuccess] = useState(false);
   const [saving, setSaving] = useState(false);
 
   const isAndroid = Platform.OS === 'android';
@@ -90,6 +104,7 @@ export default function TeacherScreen() {
       if (!user) {
         setRole(null);
         setRoleLoading(false);
+        setSavedEvents([]);
 
         return () => {
           active = false;
@@ -100,7 +115,9 @@ export default function TeacherScreen() {
 
       getProfile(user.id)
         .then((profile) => {
-          if (active) setRole(profile?.role ?? 'student');
+          if (active) {
+            setRole(profile?.role ?? 'student');
+          }
         })
         .catch(() => {
           if (active) setRole('student');
@@ -113,6 +130,59 @@ export default function TeacherScreen() {
         active = false;
       };
     }, [user])
+  );
+
+  const loadSavedEvents = useCallback(async () => {
+    if (!user || role !== 'teacher') {
+      setSavedEvents([]);
+      return;
+    }
+
+    setEventsLoading(true);
+
+    try {
+      const events = await getEventsByTeacher(user.id);
+      setSavedEvents(events);
+    } catch {
+      setMessage('Could not load your saved events.');
+      setMessageIsSuccess(false);
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [user, role]);
+
+  useFocusEffect(
+    useCallback(() => {
+      let active = true;
+
+      if (!user || role !== 'teacher') {
+        setSavedEvents([]);
+        return;
+      }
+
+      const load = async () => {
+        setEventsLoading(true);
+
+        try {
+          const events = await getEventsByTeacher(user.id);
+
+          if (active) setSavedEvents(events);
+        } catch {
+          if (active) {
+            setMessage('Could not load your saved events.');
+            setMessageIsSuccess(false);
+          }
+        } finally {
+          if (active) setEventsLoading(false);
+        }
+      };
+
+      void load();
+
+      return () => {
+        active = false;
+      };
+    }, [user, role])
   );
 
   const openPicker = (target: EditTarget) => {
@@ -181,45 +251,46 @@ export default function TeacherScreen() {
 
     if (!event.eventId || !event.title) {
       setMessage('Event title and code are required.');
+      setMessageIsSuccess(false);
       return;
     }
 
     if (endDate.getTime() <= startDate.getTime()) {
       setMessage('End time must be after start time.');
+      setMessageIsSuccess(false);
       return;
     }
 
     setSaving(true);
     setMessage(null);
-    setPayload(null);
+    setMessageIsSuccess(false);
 
     try {
       const { error } = await createEvent(event);
 
       if (error) {
-        setMessage('Could not save the event. Please try again.');
+        setMessage(`Could not save the event: ${error}`);
+        setMessageIsSuccess(false);
         return;
       }
 
-      setPayload(buildQRPayload(event));
-      setMessage('Event saved! Your QR code is ready.');
+      if (user) {
+        const events = await getEventsByTeacher(user.id);
+        setSavedEvents(events);
+      }
+
+      setMessage('Event saved successfully! Its QR code is shown below.');
+      setMessageIsSuccess(true);
+
+      setTitle('');
+      setEventId('');
     } catch {
-      setMessage('Something went wrong. Please try again.');
+      setMessage('Something went wrong while saving the event.');
+      setMessageIsSuccess(false);
     } finally {
       setSaving(false);
     }
   };
-
-  if (roleLoading) {
-    return (
-      <View style={styles.center}>
-        <View style={styles.statusIcon}>
-          <Ionicons name="calendar-outline" size={32} color={THEME.yellow} />
-        </View>
-        <Text style={styles.statusTitle}>Loading</Text>
-      </View>
-    );
-  }
 
   if (role !== 'teacher') {
     return (
@@ -253,7 +324,7 @@ export default function TeacherScreen() {
 
         <View style={styles.headerText}>
           <Text style={styles.headerEyebrow}>QR ATTENDANCE</Text>
-          <Text style={styles.headerTitle}>Create Event</Text>
+          <Text style={styles.headerTitle}>Teacher Dashboard</Text>
         </View>
 
         <View style={styles.headerBadge}>
@@ -272,7 +343,7 @@ export default function TeacherScreen() {
           </View>
 
           <View>
-            <Text style={styles.sectionTitle}>Event Information</Text>
+            <Text style={styles.sectionTitle}>Create Event</Text>
             <Text style={styles.sectionSmall}>EVENT SETUP</Text>
           </View>
         </View>
@@ -357,16 +428,20 @@ export default function TeacherScreen() {
           </View>
 
           <Text style={styles.hint}>
-            Tap a chip to set the end time from start.
+            Tap a chip to set the end time from the event start.
           </Text>
         </View>
 
         {message && (
           <View style={styles.messageBox}>
             <Ionicons
-              name={payload ? 'checkmark-circle' : 'alert-circle'}
+              name={
+                messageIsSuccess
+                  ? 'checkmark-circle'
+                  : 'alert-circle'
+              }
               size={20}
-              color={payload ? THEME.green : THEME.yellow}
+              color={messageIsSuccess ? THEME.green : THEME.yellow}
             />
             <Text style={styles.messageText}>{message}</Text>
           </View>
@@ -376,7 +451,7 @@ export default function TeacherScreen() {
           <AppButton
             theme="primary"
             title={saving ? 'Creating Event...' : 'Create Event'}
-            icon={saving ? 'hourglass-outline' : 'add-circle-outline'}
+            icon="add-circle-outline"
             onPress={handleCreateEvent}
             disabled={saving}
           />
@@ -414,31 +489,162 @@ export default function TeacherScreen() {
         </View>
       )}
 
-      {payload && (
-        <View style={styles.resultCard}>
-          <View style={styles.resultIcon}>
+      <View style={styles.eventsSection}>
+        <View style={styles.eventsHeader}>
+          <View style={styles.sectionIcon}>
             <Ionicons
-              name="checkmark-circle"
-              size={28}
-              color={THEME.green}
+              name="calendar"
+              size={22}
+              color={THEME.yellow}
             />
           </View>
 
-          <Text style={styles.resultTitle}>Event Created</Text>
-
-          <View style={styles.qrBox}>
-            <QRCode value={payload} size={200} />
+          <View style={styles.eventsHeaderText}>
+            <Text style={styles.sectionTitle}>My Events</Text>
+            <Text style={styles.sectionSmall}>
+              {savedEvents.length} SAVED EVENT
+              {savedEvents.length === 1 ? '' : 'S'}
+            </Text>
           </View>
 
-          <Text style={styles.qrEventTitle}>{title.trim()}</Text>
-          <Text style={styles.qrEventCode}>
-            EVENT CODE: {eventId.trim()}
-          </Text>
-
-          <View style={styles.divider} />
-          <Text style={styles.payloadText}>{payload}</Text>
+          <Pressable
+  accessibilityRole="button"
+  style={styles.refreshButton}
+  onPress={() => void loadSavedEvents()}
+  disabled={eventsLoading}
+>
+  <Ionicons
+    name="refresh-outline"
+    size={22}
+    color={THEME.yellow}
+  />
+</Pressable>
         </View>
-      )}
+
+       {eventsLoading && savedEvents.length === 0 ? (
+  <View style={styles.emptyCard}>
+    <Text style={styles.emptyText}>Loading your events...</Text>
+  </View>
+) : savedEvents.length === 0 ? (
+          <View style={styles.emptyCard}>
+            <Ionicons
+              name="calendar-outline"
+              size={42}
+              color={THEME.muted}
+            />
+            <Text style={styles.emptyTitle}>No Events Yet</Text>
+            <Text style={styles.emptyText}>
+              Create an event above. Your saved event and its QR code will
+              appear here.
+            </Text>
+          </View>
+        ) : (
+          savedEvents.map((item) => {
+            const qrPayload = buildQRPayload({
+              eventId: item.event_code,
+              title: item.title,
+              start: item.start_time ?? undefined,
+              end: item.end_time ?? undefined,
+            });
+
+            return (
+              <View key={item.id} style={styles.eventCard}>
+                <View style={styles.eventTopRow}>
+                  <View style={styles.eventIcon}>
+                    <Ionicons
+                      name="calendar"
+                      size={23}
+                      color={THEME.green}
+                    />
+                  </View>
+
+                  <View style={styles.eventHeading}>
+                    <Text style={styles.eventTitle}>{item.title}</Text>
+                    <Text style={styles.eventCode}>
+                      CODE: {item.event_code}
+                    </Text>
+                  </View>
+
+                  <View style={styles.savedBadge}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={15}
+                      color={THEME.green}
+                    />
+                    <Text style={styles.savedBadgeText}>Saved</Text>
+                  </View>
+                </View>
+
+                <View style={styles.eventDateRow}>
+                  <Ionicons
+                    name="play-circle-outline"
+                    size={17}
+                    color={THEME.green}
+                  />
+                  <View style={styles.eventDateTextContainer}>
+                    <Text style={styles.eventDateLabel}>START</Text>
+                    <Text style={styles.eventDateValue}>
+                      {formatSavedDateTime(item.start_time)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.eventDateRow}>
+                  <Ionicons
+                    name="stop-circle-outline"
+                    size={17}
+                    color={THEME.red}
+                  />
+                  <View style={styles.eventDateTextContainer}>
+                    <Text style={styles.eventDateLabel}>END</Text>
+                    <Text style={styles.eventDateValue}>
+                      {formatSavedDateTime(item.end_time)}
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.qrDivider} />
+
+                <Text style={styles.qrHeading}>EVENT QR CODE</Text>
+
+                <View style={styles.qrBox}>
+                  <QRCode
+                    value={qrPayload}
+                    size={190}
+                    backgroundColor="white"
+                    color="black"
+                  />
+                </View>
+
+                <Text style={styles.qrInstruction}>
+                  Students can scan this QR code to record their attendance.
+                </Text>
+
+                <Pressable
+                  accessibilityRole="button"
+                  style={({ pressed }) => [
+                    styles.payloadToggle,
+                    pressed && styles.chipPressed,
+                  ]}
+                  onPress={() => {
+                    setMessage(`QR code ready for ${item.event_code}.`);
+                    setMessageIsSuccess(true);
+                  }}
+                >
+                  <Ionicons
+                    name="qr-code-outline"
+                    size={17}
+                    color={THEME.green}
+                  />
+                  <Text style={styles.payloadToggleText}>
+                    QR generated for this event
+                  </Text>
+                </Pressable>
+              </View>
+            );
+          })
+        )}
+      </View>
     </ScrollView>
   );
 }
@@ -468,7 +674,7 @@ function PickerField({ value, icon, onPress }: PickerFieldProps) {
         <Text style={styles.pickerCaption}>Tap to change</Text>
       </View>
 
-      <Ionicons name="calendar" size={19} color={THEME.yellow} />
+      <Ionicons name="calendar" size={19} color={THEME.green} />
     </Pressable>
   );
 }
@@ -542,7 +748,7 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     color: THEME.text,
-    fontSize: 27,
+    fontSize: 25,
     fontWeight: '900',
     letterSpacing: -0.6,
   },
@@ -771,50 +977,174 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '900',
   },
-  resultCard: {
+
+  eventsSection: {
+    marginTop: 28,
+  },
+  eventsHeader: {
+    flexDirection: 'row',
     alignItems: 'center',
-    padding: 20,
-    marginTop: 24,
+    gap: 12,
+    marginBottom: 16,
+  },
+  eventsHeaderText: {
+    flex: 1,
+  },
+  refreshButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    backgroundColor: THEME.card,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 26,
+    backgroundColor: THEME.card,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    borderRadius: 18,
+  },
+  emptyTitle: {
+    color: THEME.text,
+    fontSize: 17,
+    fontWeight: '900',
+    marginTop: 13,
+  },
+  emptyText: {
+    color: THEME.muted,
+    fontSize: 13,
+    lineHeight: 20,
+    textAlign: 'center',
+    marginTop: 10,
+  },
+  eventCard: {
+    padding: 17,
+    marginBottom: 18,
     backgroundColor: THEME.card,
     borderWidth: 1,
     borderColor: THEME.border,
     borderRadius: 20,
   },
-  resultIcon: {
-    marginBottom: 8,
+  eventTopRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+    marginBottom: 20,
   },
-  resultTitle: {
-    color: THEME.text,
-    fontSize: 22,
-    fontWeight: '900',
-    marginBottom: 19,
-  },
-  qrBox: {
-    padding: 14,
-    backgroundColor: THEME.white,
+  eventIcon: {
+    width: 43,
+    height: 43,
     borderRadius: 13,
+    backgroundColor: THEME.cardLight,
     borderWidth: 1,
     borderColor: THEME.border,
-    marginBottom: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  qrEventTitle: {
+  eventHeading: {
+    flex: 1,
+  },
+  eventTitle: {
     color: THEME.text,
     fontSize: 17,
     fontWeight: '900',
-    textAlign: 'center',
+    lineHeight: 23,
   },
-  qrEventCode: {
+  eventCode: {
     color: THEME.green,
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '900',
     letterSpacing: 1,
-    marginTop: 7,
-    marginBottom: 17,
+    marginTop: 6,
   },
-  payloadText: {
+  savedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 9,
+    backgroundColor: THEME.background,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  savedBadgeText: {
+    color: THEME.green,
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  eventDateRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+    marginBottom: 14,
+  },
+  eventDateTextContainer: {
+    flex: 1,
+  },
+  eventDateLabel: {
     color: THEME.muted,
-    fontSize: 11,
-    lineHeight: 17,
+    fontSize: 9,
+    fontWeight: '900',
+    letterSpacing: 1.2,
+    marginBottom: 5,
+  },
+  eventDateValue: {
+    color: THEME.text,
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 18,
+  },
+  qrDivider: {
+    height: 1,
+    backgroundColor: THEME.border,
+    marginTop: 6,
+    marginBottom: 19,
+  },
+  qrHeading: {
+    color: THEME.yellow,
+    fontSize: 12,
+    fontWeight: '900',
+    letterSpacing: 1.5,
     textAlign: 'center',
+    marginBottom: 15,
+  },
+  qrBox: {
+    alignSelf: 'center',
+    padding: 14,
+    backgroundColor: THEME.white,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  qrInstruction: {
+    color: THEME.muted,
+    fontSize: 12,
+    lineHeight: 18,
+    textAlign: 'center',
+    marginTop: 15,
+  },
+  payloadToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 10,
+    marginTop: 13,
+    backgroundColor: THEME.background,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  payloadToggleText: {
+    color: THEME.green,
+    fontSize: 11,
+    fontWeight: '800',
   },
 });

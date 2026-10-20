@@ -42,7 +42,7 @@ export type TeacherEventSummary = {
   attendeeCount: number;
 };
 
-const LATE_GRACE_PERIOD_MS = 30 * 60 * 1000;
+const LATE_GRACE_PERIOD_MS = 10 * 60 * 1000;
 
 function getScannedStatus(
   scannedAt: string,
@@ -177,7 +177,7 @@ export async function registerAttendance(
     success: true,
     message:
       status === 'Late'
-        ? 'Attendance recorded — Late (more than 30 minutes after start).'
+        ? 'Attendance recorded — Late (more than 10 minutes after start).'
         : 'Attendance recorded — Present.',
     eventTitle: event.title,
     status,

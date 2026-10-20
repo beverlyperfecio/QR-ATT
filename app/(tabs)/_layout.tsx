@@ -28,11 +28,12 @@ export default function TabLayout() {
 
     try {
       const profile = await getProfile(user.id);
-      setRole(
-        String(profile?.role ?? 'student')
-          .trim()
-          .toLowerCase()
-      );
+
+      const userRole = String(profile?.role ?? 'student')
+        .trim()
+        .toLowerCase();
+
+      setRole(userRole);
     } catch (error) {
       console.error('Failed to load user role:', error);
       setRole('student');
@@ -43,8 +44,8 @@ export default function TabLayout() {
 
   useFocusEffect(
     useCallback(() => {
-      loadRole();
-    }, [loadRole])
+      void loadRole();
+    }, [loadRole]),
   );
 
   if (loadingRole) {
@@ -57,6 +58,8 @@ export default function TabLayout() {
       </View>
     );
   }
+
+  const isTeacher = role === 'teacher';
 
   return (
     <Tabs
@@ -125,14 +128,11 @@ export default function TabLayout() {
         name="scan"
         options={{
           title: 'Scan',
-          tabBarIcon: ({ color, focused }) => (
+          href: isTeacher ? null : '/scan',
+          tabBarIcon: ({ focused }) => (
             <View style={styles.scanButton}>
               <Ionicons
-                name={
-                  focused
-                    ? 'qr-code'
-                    : 'qr-code-outline'
-                }
+                name={focused ? 'qr-code' : 'qr-code-outline'}
                 color={COLORS.textOnPrimary}
                 size={28}
               />
@@ -147,11 +147,7 @@ export default function TabLayout() {
           title: 'Profile',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={
-                focused
-                  ? 'person'
-                  : 'person-outline'
-              }
+              name={focused ? 'person' : 'person-outline'}
               color={color}
               size={24}
             />
@@ -163,14 +159,10 @@ export default function TabLayout() {
         name="teacher"
         options={{
           title: 'Teacher',
-          href: '/teacher',
+          href: isTeacher ? '/teacher' : null,
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
-              name={
-                focused
-                  ? 'clipboard'
-                  : 'clipboard-outline'
-              }
+              name={focused ? 'clipboard' : 'clipboard-outline'}
               color={color}
               size={24}
             />
